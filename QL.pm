@@ -7,7 +7,7 @@ XML::QL - An XML query language
 
 =head1 VERSION
 
-0.02 alpha
+0.05 beta
 
 =head1 SYNOPSIS
 
@@ -187,7 +187,7 @@ use vars qw/$VERSION $construct $uri @orderby @match @found/;
 use XML::Parser;
 #use Data::Dumper;
 
-$VERSION = "0.04";
+$VERSION = "0.05";
 my $VARNAME='\$([a-zA-Z0-9]+)';
 my $AS_ELEMENT="^(.*?)\\s+AS_ELEMENT\\s+$VARNAME\\s*\$";
 
@@ -229,54 +229,6 @@ sub query {
 	buildMatchData($sql) || die "Unable to parse query string!\n";
 	searchXMLfile($uri) || die "Unable to open and search file $uri\n";
   return createConstruct($construct);
-}
-
-sub buildMatchData {
-  my $sql = shift;
-  my ($where, $orderby, @sqlparms);
-  return 0 unless (@sqlparms= ($sql =~
-     		/^\s*
-		WHERE\s+(.*?)\s+
-		(?:ORDER-BY\s+(.*?)\s+)?
-		IN\s+(.*?)\s+
-		CONSTRUCT\s+(.*)$
-		/isx ));
-  $where = shift @sqlparms;
-  $construct = pop @sqlparms;
-  $uri = pop @sqlparms;
-  $orderby = shift @sqlparms;
-
-  # check URI syntax
-  return 0 unless $uri =~ s/^(['"])(.*)\1$/$2/;
-
-  # handle order-by
-  if ($orderby) {
-    foreach my $tmp (split(/\s*,\s*/, $orderby)) {
-      return 0 unless $tmp =~ /^$VARNAME(?:\s+(DESCENDING))?$/io;
-      push @orderby, { 'field' => $1, 'order' => (defined($2))? 'DESCENDING': 'ASCENDING'};
-    }
-  }
-
-  my $ql = new XML::Parser(Handlers => {Start => \&where_start, End => \&where_end, Char => \&where_char});
-  $ql->parse($where);
-  return 1;
-}
-
-sub where_start {
-  my ($expat,$element,%attributes)=@_;
-  push @match, {'type' => 'starttag', 'element' => $element, 'char' => '', 'attrib' => \%attributes };
-}
-
-sub where_end {
-  my ($expat,$element)=@_;
-  push @match, {'type' => 'endtag', 'element' => $element, 'char' => '', 'attrib' => {}};
-}
-
-sub where_char {
-  my ($expat,$string)=@_;
-  $string =~ s/^\s+//; # strip leading white space
-  $string =~ s/\s+$//; # strip following white space
-  push @match, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
 }
 
 sub searchXMLfile {
@@ -358,9 +310,74 @@ sub orderBy {
   return 0;
 }
 
+sub buildMatchData {
+  my $sql = shift;
+  my ($where, $orderby, @sqlparms);
+  return 0 unless (@sqlparms= ($sql =~
+     		/^\s*
+		WHERE\s+(.*?)\s+
+		(?:ORDER-BY\s+(.*?)\s+)?
+		IN\s+(.*?)\s+
+		CONSTRUCT\s+(.*)$
+		/isx ));
+  $where = shift @sqlparms;
+  $construct = pop @sqlparms;
+  $uri = pop @sqlparms;
+  $orderby = shift @sqlparms;
+
+  # check URI syntax
+  return 0 unless $uri =~ s/^(['"])(.*)\1$/$2/;
+
+  # handle order-by
+  if ($orderby) {
+    foreach my $tmp (split(/\s*,\s*/, $orderby)) {
+      return 0 unless $tmp =~ /^$VARNAME(?:\s+(DESCENDING))?$/io;
+      push @orderby, { 'field' => $1, 'order' => (defined($2))? 'DESCENDING': 'ASCENDING'};
+    }
+  }
+
+  my $ql = new XML::Parser(Style => 'Stream', Pkg => 'XML::QL::Where');
+	eval {
+	  $ql->parse("<__query>$where</__query>");
+	};
+	if ($@) {
+		die "Parsing where clause '$where' failed: $@\n";
+	}
+  return 1;
+}
+
+package XML::QL::Where;
+
+sub StartTag {
+  my ($expat,$element)=@_;
+	my %attributes = %_;
+	return if $element eq '__query';
+#	warn "Adding start => $element\n";
+  push @XML::QL::match, {'type' => 'starttag', 'element' => $element, 'char' => '', 'attrib' => \%attributes };
+}
+
+sub EndTag {
+  my ($expat,$element)=@_;
+	return if $element eq '__query';
+#	warn "Adding end => $element\n";
+  push @XML::QL::match, {'type' => 'endtag', 'element' => $element, 'char' => '', 'attrib' => {}};
+}
+
+sub Text {
+  my ($expat)=@_;
+	my $string = $_;
+  $string =~ s/^\s+//s; # strip leading white space
+  $string =~ s/\s+$//s; # strip following white space
+#	warn "Adding Text '$string'\n" if $string ne '';
+  push @XML::QL::match, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
+}
+
 package XML::QL::Search;
 
 use vars qw($lastcall @context @curmat);
+
+#my $VARNAME = $XML::QL::VARNAME;
+#my $AS_ELEMENT = $XML::QL::AS_ELEMENT;
 
 sub StartTag {
   my ($expat,$element)=@_;
@@ -420,7 +437,8 @@ sub EndTag {
   my ($expat,$element)=@_;
   if ($lastcall eq "open$element") {
     # To fix Char handler not being called on an empty string
-    Text($expat, '');
+		$_ = '';
+    Text($expat);
   }
   $lastcall = "close$element";
   pop @context;
@@ -452,10 +470,12 @@ sub Text {
   my ($expat)=@_;
   my $string = $_;
   $lastcall = "char";
-  $string =~ s/^\s+//; # strip leading whitespace
-  $string =~ s/\s+$//; # strip following white space
+  $string =~ s/^\s+//s; # strip leading whitespace
+  $string =~ s/\s+$//s; # strip following white space
+#	warn "Looking at text: '$string'\n";
   foreach my $cm (@curmat) {
     if ( ! $cm->{done} and $XML::QL::match[$cm->{ptr}]->{type} eq 'char' ) {
+#			warn "Looking at '$string' for '", $XML::QL::match[$cm->{ptr}]->{char}, "'\n";
       if ( $XML::QL::match[$cm->{ptr}]->{char} =~ /$AS_ELEMENT/io ) {
         my $tmpfind = $1;
         my $tmpvar = $2;
