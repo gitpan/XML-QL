@@ -34,7 +34,7 @@ XML-QL specification.
 
 =head1 METHODS
 
-=over4
+=over 4
 
 =item query( "query" )
 
@@ -42,7 +42,7 @@ This is the only method required to use this module. This one method allows
 the user to pass a valid XML-QL query to the module, and the return value is
 the output.
 
-=back4
+=back
 
 =head1 XML-QL: The Query Language
 
@@ -50,7 +50,7 @@ The basic syntax consists of two parts, a WHERE clause to describe the data
 to search for, and a CONSTRUCT clause to describe how to return the data that
 is found.
 
-=over4
+=over 4
 
 =item WHERE
 
@@ -60,7 +60,7 @@ The WHERE clause can be separated into several parts. The first is the search st
 the second is an optional ORDER-BY clause much like ORDER BY in SQL, and last is
 the required XML document file name. Each of these parts is described below.
 
-=over4
+=over 4
 
 =item XML-searchstring
 
@@ -136,7 +136,7 @@ be support for multiple files, directories, and URLs. Following is an example:
 
 IN 'REC-xml-19980210.xml'
 
-=back4
+=back
 
 =item CONSTRUCT
 
@@ -153,7 +153,7 @@ The ouput of this will then be a carriage return, a tab, "Type: ", the contents
 of $type, a carriage return, a tab, "Author: ", and the contents of $author. This
 construct will be repeated for every match found and returned as a single string.
 
-=back4
+=back
 
 =head1 AUTHOR
 
@@ -183,366 +183,265 @@ use vars qw/$VERSION/;
 use XML::Parser;
 #use Data::Dumper;
 
-$VERSION = 0.02;
+$VERSION = 0.03;
 
-my @match = ();
-my @context = ();
-my @curmat = ();
-my @found = ();
+my (@match, @context, @curmat, @found);
+
 my $construct;
 my $uri;
 my @orderby;
 my $lastcall;
 
-sub query
-	{
-	my ($class, $sql) = @_;
-	buildMatchData($sql) || die "Unable to parse query string!\n";
-	searchXMLfile($uri) || die "Unable to open file $uri\n";
-	return createConstruct($construct);
-	}
+my $VARNAME="\\\$([a-zA-Z0-9]+)";
+my $AS_ELEMENT="^(.*?)\\s+AS_ELEMENT\\s+$VARNAME\\s*\$";
 
-sub orderBy
-	{
-	my ($aval, $bval) = @_;
-	my $numeric = 0;
-	foreach (@orderby)
-		{
-		my $sortby = $_->{field};
-		my $order = $_->{order};
-		if ( ($aval->{$sortby} =~ /^\d*\.?\d*$/) && ($bval->{$sortby} =~ /^\d*\.?\d*$/) )
-			{
-			$numeric = 1;
-			}
-		if ($numeric)
-			{
-			if ($order eq 'DESCENDING')
-				{
-				return ($bval->{$sortby} <=> $aval->{$sortby}) if ($bval->{$sortby} != $aval->{$sortby});
-				}
-			else
-				{
-				return ($aval->{$sortby} <=> $bval->{$sortby}) if ($aval->{$sortby} != $bval->{$sortby});
-				}
-			}
-		else
-			{
-			if ($order eq 'DESCENDING')
-				{
-				return ($bval->{$sortby} cmp $aval->{$sortby}) if ($bval->{$sortby} ne $aval->{$sortby});
-				}
-			else
-				{
-				return ($aval->{$sortby} cmp $bval->{$sortby}) if ($aval->{$sortby} ne $bval->{$sortby});
-				}
-			}
-		}
-	return 0;
-	}
+sub query {
+  my ($class, $sql) = @_;
 
-sub createConstruct
-	{
-	my ($construct) = @_;
-	my $ret_val = '';
-	@found = sort { orderBy($a,$b) } (@found) if ( scalar(@orderby) > 0 );
-	foreach my $match (@found)
-		{
-		my $tmp = $construct;
-		foreach my $key ( keys(%{$match}) )
-			{
-			$tmp =~ s/\$$key/$match->{$key}/eg;
-			}
-		$ret_val .= $tmp;
-		}
-	return $ret_val;
-	}
+  @match = ();
+  @context = ();
+  @curmat = ();
+  @found = ();
 
-sub searchXMLfile
-	{
-	my ($uri) = @_;
+  buildMatchData($sql) || die "Unable to parse query string!\n";
+  searchXMLfile($uri) || die "Unable to open file $uri\n";
+  return createConstruct($construct);
+}
 
-	my $ql = new XML::Parser(Handlers => {Start => \&handle_start, End => \&handle_end, Char => \&handle_char});
+sub orderBy {
+  my ($aval, $bval) = @_;
+  my $numeric = 0;
+  foreach (@orderby) {
+    my $sortby = $_->{field};
+    my $order = $_->{order};
+    if ( ($aval->{$sortby} =~ /^\d*\.?\d*$/) && ($bval->{$sortby} =~ /^\d*\.?\d*$/)) {
+      $numeric = 1;
+    }
+    if ($numeric) {
+      if ($order eq 'DESCENDING') {
+         return ($bval->{$sortby} <=> $aval->{$sortby}) if ($bval->{$sortby} != $aval->{$sortby});
+      }
+      else {
+        return ($aval->{$sortby} <=> $bval->{$sortby}) if ($aval->{$sortby} != $bval->{$sortby});
+      }
+    }
+    else {
+      if ($order eq 'DESCENDING') {
+	return ($bval->{$sortby} cmp $aval->{$sortby}) if ($bval->{$sortby} ne $aval->{$sortby});
+      }
+      else {
+        return ($aval->{$sortby} cmp $bval->{$sortby}) if ($aval->{$sortby} ne $bval->{$sortby});
+      }
+    }
+  }
+  return 0;
+}
 
-	if ($uri =~ /^(file:|https?:|ftp:|gopher:)/) {
-		eval "use LWP::UserAgent;";
-		my $ua = LWP::UserAgent->new;
-		$ua->env_proxy;
+sub createConstruct {
+  my ($construct) = @_;
+  my $ret_val = '';
+  @found = sort { orderBy($a,$b) } (@found) if ( scalar(@orderby) > 0 );
+  foreach my $match (@found) {
+    my $tmp = $construct;
+    foreach my $key ( keys(%{$match})) {
+      $tmp =~ s/\$$key/$match->{$key}/eg;
+    }
+    $ret_val .= $tmp;
+  }
+  return $ret_val;
+}
 
-		my $req = new HTTP::Request 'GET',$uri;
-		my $doc = $ua->request($req)->content;
+sub searchXMLfile {
+  my ($uri) = @_;
+
+  my $ql = new XML::Parser(Handlers => {Start => \&handle_start, End => \&handle_end, Char => \&handle_char});
+
+  if ($uri =~ /^(file:|https?:|ftp:|gopher:)/) {
+    eval "use LWP::UserAgent;";
+    my $ua = LWP::UserAgent->new;
+    $ua->env_proxy;
+
+    my $req = new HTTP::Request 'GET',$uri;
+    my $doc = $ua->request($req)->content;
 	
-		$ql->parsestring($doc);
-	}
-	else {
-		# Assume it's a file
-		$ql->parsefile($uri);
-	}
+    $ql->parsestring($doc);
+  }
+  else {
+    # Assume it's a file
+    $ql->parsefile($uri);
+  }
 
-	#open OUT, ">debug.txt";
-	#print OUT Data::Dumper->Dump([\@match, \@context, \@curmat, \@found],['match', 'context', 'curmat', 'found']);
-	#close OUT;
-	}
+  #open OUT, ">debug.txt";
+  #print OUT Data::Dumper->Dump([\@match, \@context, \@curmat, \@found],['match', 'context', 'curmat', 'found']);
+  #close OUT;
+}
 
-sub buildMatchData
-	{
-	my ($sql) = @_;
-	my ($where, $orderby);
-	if ( $sql =~ /^\s*
-					(WHERE)\s+(.*?)\s+
-					(?:(ORDER-BY)\s+(.*?)\s+)?
-					(IN)\s+(.*?)\s+
-					(CONSTRUCT)\s+(.*)$/isx )
-		{
-		for ( my $i = 1; $i <= 8; $i += 2 )
-			{
-			no strict "refs";
-			next if (! defined(${"$i"}) );
-			my $val = $i + 1;
-			$where = ${"$val"} if (${"$i"} eq 'WHERE');
-			$orderby = ${$val} if (${$i} eq 'ORDER-BY');
-			$uri = ${$val} if (${$i} eq 'IN');
-			$construct = ${$val} if (${$i} eq 'CONSTRUCT');
-			}
-		}
-	else
-		{
-		return 0;
-		}
+sub buildMatchData {
+  my $sql = shift;
+  my ($where, $orderby, @sqlparms);
+  return 0 unless (@sqlparms= ($sql =~
+     		/^\s*
+		WHERE\s+(.*?)\s+
+		(?:ORDER-BY\s+(.*?)\s+)?
+		IN\s+(.*?)\s+
+		CONSTRUCT\s+(.*)$
+		/isx ));
+  $where = shift @sqlparms;
+  $construct = pop @sqlparms;
+  $uri = pop @sqlparms;
+  $orderby = shift @sqlparms;
 
-	# check URI syntax
-	if ( $uri =~ /^['"](.*)['"]$/ )
-		{
-		$uri = $1;
-		}
-	else
-		{
-		return 0;
-		}
+  # check URI syntax
+  return 0 unless $uri =~ s/^(['"])(.*)\1$/$2/;
 
-	# handle order-by
-	if ($orderby)
-		{
-		$orderby =~ s/^\s*//;
-		$orderby =~ s/\s*$//;
-		my @tmporder = split(/\s*,\s*/, $orderby);
-		foreach my $tmp (@tmporder)
-			{
-			if ( $tmp =~ /^\$([a-zA-Z0-9]+)(?:\s+(DESCENDING))?$/i )
-				{
-				if ( defined($2) )
-					{
-					push @orderby, { 'field' => $1, 'order' => 'DESCENDING'};
-					}
-				else
-					{
-					push @orderby, { 'field' => $1, 'order' => 'ASCENDING'};
-					}
-				}
-			else
-				{
-				return 0
-				}
-			}
-		}
+  # handle order-by
+  if ($orderby) {
+    foreach my $tmp (split(/\s*,\s*/, $orderby)) {
+      return 0 unless $tmp =~ /^$VARNAME(?:\s+(DESCENDING))?$/io;
+      push @orderby, { 'field' => $1, 'order' => (defined($2))? 'DESCENDING': 'ASCENDING'};
+    }
+  }
 
-	my $ql = new XML::Parser(Handlers => {Start => \&where_start, End => \&where_end, Char => \&where_char});
-	$ql->parse($where);
-	return 1;
-	}
+  my $ql = new XML::Parser(Handlers => {Start => \&where_start, End => \&where_end, Char => \&where_char});
+  $ql->parse($where);
+  return 1;
+}
 
-sub where_start
-	{
-	my $expat = shift;
-	my $element = shift;
-	my %attributes = @_;
-	push @match, {'type' => 'starttag', 'element' => $element, 'char' => '', 'attrib' => \%attributes };
-	}
+sub where_start {
+  my ($expat,$element,%attributes)=@_;
+  push @match, {'type' => 'starttag', 'element' => $element, 'char' => '', 'attrib' => \%attributes };
+}
 
-sub where_end
-	{
-	my $expat = shift;
-	my $element = shift;
-	push @match, {'type' => 'endtag', 'element' => $element, 'char' => '', 'attrib' => {}};
-	}
+sub where_end {
+  my ($expat,$element)=@_;
+  push @match, {'type' => 'endtag', 'element' => $element, 'char' => '', 'attrib' => {}};
+}
 
-sub where_char
-	{
-	my $expat = shift;
-	my $string = shift;
-	$string =~ s/^\s+//; # strip leading white space
-	$string =~ s/\s+$//; # strip following white space
-	push @match, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
-	}
+sub where_char {
+  my ($expat,$string)=@_;
+  $string =~ s/^\s+//; # strip leading white space
+  $string =~ s/\s+$//; # strip following white space
+  push @match, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
+}
 
-sub handle_start
-	{
-	my $expat = shift;
-	my $element = shift;
-	my %attributes = @_;
-	$lastcall = "open$element";
-	push @context, $element;
-	my $limit = scalar(@curmat);
-	for (my $i = 0; $i < $limit; $i++ )
-		{
-		if ( ! $curmat[$i]->{done} )
-			{
-			# If current match not done...
-			if ( $match[$curmat[$i]->{ptr}]->{type} eq 'starttag' )
-				{
-				# If type of cur match equals starttag...
-				if ( $match[$curmat[$i]->{ptr}]->{element} eq $element )
-					{
-					# If the target tag equals the current element...
-					# Advance match
+sub handle_start {
+  my ($expat,$element,%attributes)=@_;
+  $lastcall = "open$element";
+  push @context, $element;
+  my $limit=scalar(@curmat);
+  for (my $i = 0; $i < $limit; $i++ ) {
+    if ( ! $curmat[$i]->{done} and $match[$curmat[$i]->{ptr}]->{type} eq 'starttag') {
+      if ( $match[$curmat[$i]->{ptr}]->{element} eq $element ) {
+        # If the target tag equals the current element...
+        # Advance match
 
-					my %tmphash = %{$curmat[$i]};
-					push @curmat, \%tmphash;
+        my %tmphash = %{$curmat[$i]};
+        push @curmat, \%tmphash;
 
-					$curmat[$i]->{ptr}++ if ( matchAttributes($i, %attributes) );
-					}
-				}
-			}
-		}
-	if ( $match[0]->{type} eq 'starttag' )
-		{
-		# If the start of the match is a starttag...
-		if ( $match[0]->{element} eq $element )
-			{
-			# If the element matches the target element
-			push @curmat, {'ptr' => 0, 'done' => 0, 'fail' => scalar(@context)};
-			matchAttributes(scalar(@curmat) - 1, %attributes);
-			$curmat[scalar(@curmat) - 1]->{ptr}++;
-			}
-		}
-	}
+        $curmat[$i]->{ptr}++ if ( matchAttributes($curmat[$i], %attributes) );
+      }
+    }
+  }
+  if ( $match[0]->{type} eq 'starttag' and $match[0]->{element} eq $element) {
+    # If the start of the match is a starttag and the element matches the target element
+    push @curmat, {'ptr' => 0, 'done' => 0, 'fail' => scalar(@context)};
+    matchAttributes($curmat[-1], %attributes);
+    $curmat[-1]->{ptr}++;
+  }
+}
 
-sub matchAttributes
-	{
-	my ($i, %attributes) = @_;
-	my %match_attribs = %{$match[$curmat[$i]->{ptr}]->{attrib}};
-	foreach my $key ( keys(%match_attribs) )
-		{
-		if ( $match_attribs{$key} =~ /^(.*?)\s+AS_ELEMENT\s+\$([a-zA-Z0-9]+)\s*$/i )
-			{
-			my $tmpfind = $1;
-			my $tmpvar = $2;
-			if ( $attributes{$key} =~ /^$tmpfind$/i )
-				{
-				$curmat[$i]->{vars}->{$tmpvar} = $attributes{$key};
-				}
-			else
-				{
-				$curmat[$i]->{done} = 1;
-				return 0;
-				}
-			}
-		elsif ( $match_attribs{$key} =~ /^\s*\$([a-zA-Z0-9]+)\s*$/ )
-			{
-			$curmat[$i]->{vars}->{$1} = $attributes{$key};
-			}
-		elsif ( $attributes{$key} !~ /^$match_attribs{$key}$/i )
-			{
-			$curmat[$i]->{done} = 1;
-			return 0;
-			}
-		}
-	return 1;
-	}
+sub matchAttributes {
+  my ($cm, %attributes) = @_;
+  my %match_attribs = %{$match[$cm->{ptr}]->{attrib}};
+  foreach my $key ( keys(%match_attribs) ) {
+    if ( $match_attribs{$key} =~ /$AS_ELEMENT/io ) {
+      my $tmpfind = $1;
+      my $tmpvar = $2;
+      if ( $attributes{$key} =~ /^$tmpfind$/i ) {
+        $cm->{vars}->{$tmpvar} = $attributes{$key};
+      }
+      else {
+        $cm->{done} = 1;
+        return 0;
+      }
+    }
+    elsif ( $match_attribs{$key} =~ /^\s*$VARNAME\s*$/o ) {
+      $cm->{vars}->{$1} = $attributes{$key};
+    }
+    elsif ( $attributes{$key} !~ /^$match_attribs{$key}$/i ) {
+      $cm->{done} = 1;
+      return 0;
+    }
+  }
+  return 1;
+}
 
+sub handle_end {
+  my ($expat,$element)=@_;
+  if ($lastcall eq "open$element") {
+    # To fix Char handler not being called on an empty string
+    handle_char($expat, '');
+  }
+  $lastcall = "close$element";
+  pop @context;
+  foreach my $cm (@curmat) {
+    if ( ! $cm->{done} and $match[$cm->{ptr}]->{type} eq 'endtag') {
+      # If type of cur match equals endtag...
+      if ( $match[$cm->{ptr}]->{element} eq $element ) {
+        # If the target tag equals the current element...
+        # Advance match
+        $cm->{ptr}++;
+        if ($cm->{ptr} == scalar(@match)) {
+          # if the match pointer has been advanced to the end of the match...
+          # Match is done!
+          my %tmp = %{$cm->{vars}};
+          push @found, \%tmp;
+          $cm->{done} = 1;
+          $cm->{reason} = 'matched query';
+        }
+      }
+    }
+    if ( ( ! $cm->{done} ) && ( scalar(@context) < $cm->{fail} ) ) {
+      $cm->{done} = 1;
+      $cm->{reason} = "out of context on $element";
+    }
+  }
+}
 
-sub handle_end
-	{
-	my $expat = shift;
-	my $element = shift;
-	if ($lastcall eq "open$element")
-		{
-		# To fix Char handler not being called on an empty string
-		handle_char($expat, '');
-		}
-	$lastcall = "close$element";
-	pop @context;
-	for (my $i = 0; $i < scalar(@curmat); $i++ )
-		{
-		if ( ! $curmat[$i]->{done} )
-			{
-			# If current match not done...
-			if ( $match[$curmat[$i]->{ptr}]->{type} eq 'endtag' )
-				{
-				# If type of cur match equals endtag...
-				if ( $match[$curmat[$i]->{ptr}]->{element} eq $element )
-					{
-					# If the target tag equals the current element...
-					# Advance match
-					$curmat[$i]->{ptr}++;
-					if ($curmat[$i]->{ptr} == scalar(@match))
-						{
-						# if the match pointer has been advanced to the end of the match...
-						# Match is done!
-						my %tmp = %{$curmat[$i]->{vars}};
-						push @found, \%tmp;
-						$curmat[$i]->{done} = 1;
-						$curmat[$i]->{reason} = 'matched query';
-						}
-					}
-				}
-			}
-		if ( ( ! $curmat[$i]->{done} ) && ( scalar(@context) < $curmat[$i]->{fail} ) )
-			{
-			$curmat[$i]->{done} = 1;
-			$curmat[$i]->{reason} = "out of context on $element";
-			}
-		}
-	}
-
-sub handle_char
-	{
-	my $expat = shift;
-	my $string = shift;
-	$lastcall = "char";
-	$string =~ s/^\s+//; # strip leading whitespace
-	$string =~ s/\s+$//; # strip following white space
-	for (my $i = 0; $i < scalar(@curmat); $i++ )
-		{
-		if ( ! $curmat[$i]->{done} )
-			{
-			# If current match not done...
-			if ( $match[$curmat[$i]->{ptr}]->{type} eq 'char' )
-				{
-				# If type of cur match equals starttag...
-				if ( $match[$curmat[$i]->{ptr}]->{char} =~ /^(.*?)\s+AS_ELEMENT\s+\$([a-zA-Z0-9]+)\s*$/i )
-					{
-					my $tmpfind = $1;
-					my $tmpvar = $2;
-					if ( $string =~ /^$tmpfind$/i )
-						{
-						$curmat[$i]->{vars}->{$tmpvar} = $string;
-						$curmat[$i]->{ptr}++;
-						}
-					else
-						{
-						$curmat[$i]->{done} = 1;
-						$curmat[$i]->{reason} = "Does not match string $string";
-						}
-					}
-				elsif ( $string =~ /^$match[$curmat[$i]->{ptr}]->{char}$/i )
-					{
-					# If the target tag equals the current element...
-					# Advance match
-					$curmat[$i]->{ptr}++;
-					}
-				elsif ( $match[$curmat[$i]->{ptr}]->{char} =~ /^\$([a-zA-Z0-9]+)$/ )
-					{
-					$curmat[$i]->{vars}->{$1} = $string;
-					$curmat[$i]->{ptr}++;
-					}
-				else
-					{
-					$curmat[$i]->{done} = 1;
-					$curmat[$i]->{reason} = "Does not match string $string";
-					}
-				}
-			}
-		}
-	}
+sub handle_char {
+  my ($expat,$string)=@_;
+  $lastcall = "char";
+  $string =~ s/^\s+//; # strip leading whitespace
+  $string =~ s/\s+$//; # strip following white space
+  foreach my $cm (@curmat) {
+    if ( ! $cm->{done} and $match[$cm->{ptr}]->{type} eq 'char' ) {
+      if ( $match[$cm->{ptr}]->{char} =~ /$AS_ELEMENT/io ) {
+        my $tmpfind = $1;
+        my $tmpvar = $2;
+        if ( $string =~ /^$tmpfind$/i ) {
+          $cm->{vars}->{$tmpvar} = $string;
+          $cm->{ptr}++;
+        }
+        else {
+          $cm->{done} = 1;
+          $cm->{reason} = "Does not match string $string";
+        }
+      }
+      elsif ( $string =~ /^$match[$cm->{ptr}]->{char}$/i ) {
+        # If the target tag equals the current element...
+        # Advance match
+        $cm->{ptr}++;
+      }
+      elsif ( $match[$cm->{ptr}]->{char} =~ /^$VARNAME$/o ) {
+        $cm->{vars}->{$1} = $string;
+        $cm->{ptr}++;
+      }
+      else {
+        $cm->{done} = 1;
+        $cm->{reason} = "Does not match string $string";
+      }
+    }
+  }
+}
 
 1;

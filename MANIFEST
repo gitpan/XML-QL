@@ -1,6 +1,7 @@
 Changes
 Makefile.PL
 MANIFEST
+README
 QL.pm
 test.pl
 perl.com.xml

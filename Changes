@@ -6,5 +6,8 @@ Revision history for Perl extension XML::QL.
 0.02  Mon Dec 14 1998
 	- Added support for URI's
 
+0.03  Thu Jan 14 1999
+	- Fixes from Eric Bohlman
+
 
 
