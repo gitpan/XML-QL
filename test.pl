@@ -21,7 +21,7 @@ my $testnum = 2;
 
 $output = XML::QL->query(<<'EOQUERY');
 WHERE
-	<child name="$child"></child>
+	<child name="$child"/>
 IN
 	"perl.com.xml"
 CONSTRUCT

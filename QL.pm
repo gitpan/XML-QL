@@ -185,9 +185,9 @@ package XML::QL;
 use strict;
 use vars qw/$VERSION $construct $uri @orderby @match @found/;
 use XML::Parser;
-#use Data::Dumper;
+# use Data::Dumper;
 
-$VERSION = "0.05";
+$VERSION = "0.06";
 my $VARNAME='\$([a-zA-Z0-9]+)';
 my $AS_ELEMENT="^(.*?)\\s+AS_ELEMENT\\s+$VARNAME\\s*\$";
 
@@ -238,6 +238,7 @@ sub searchXMLfile {
   	Style => 'Stream',
   	Pkg => 'XML::QL::Search',
   	ErrorContext => 2,
+	_matches => \@match,
   );
 
   if ($uri =~ /^(file:|https?:|ftp:|gopher:)/) {
@@ -281,7 +282,7 @@ sub createConstruct {
 
 sub orderBy {
 	my $self = shift;
-	
+
   my ($aval, $bval) = @_;
   my $numeric = 0;
   foreach (@{$self->{orderby}}) {
@@ -336,7 +337,11 @@ sub buildMatchData {
     }
   }
 
-  my $ql = new XML::Parser(Style => 'Stream', Pkg => 'XML::QL::Where');
+  my $ql = new XML::Parser(
+  		Style => 'Stream', 
+		Pkg => 'XML::QL::Where',
+		_matches => \@match,
+		);
 	eval {
 	  $ql->parse("<__query>$where</__query>");
 	};
@@ -352,15 +357,13 @@ sub StartTag {
   my ($expat,$element)=@_;
 	my %attributes = %_;
 	return if $element eq '__query';
-#	warn "Adding start => $element\n";
-  push @XML::QL::match, {'type' => 'starttag', 'element' => $element, 'char' => '', 'attrib' => \%attributes };
+  push @{$expat->{_matches}}, {'type' => 'starttag', 'element' => $element, 'char' => '', 'attrib' => \%attributes };
 }
 
 sub EndTag {
   my ($expat,$element)=@_;
 	return if $element eq '__query';
-#	warn "Adding end => $element\n";
-  push @XML::QL::match, {'type' => 'endtag', 'element' => $element, 'char' => '', 'attrib' => {}};
+  push @{$expat->{_matches}}, {'type' => 'endtag', 'element' => $element, 'char' => '', 'attrib' => {}};
 }
 
 sub Text {
@@ -368,48 +371,50 @@ sub Text {
 	my $string = $_;
   $string =~ s/^\s+//s; # strip leading white space
   $string =~ s/\s+$//s; # strip following white space
-#	warn "Adding Text '$string'\n" if $string ne '';
-  push @XML::QL::match, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
+  push @{$expat->{_matches}}, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
 }
 
 package XML::QL::Search;
 
 use vars qw($lastcall @context @curmat);
 
+my $found = 0;
 #my $VARNAME = $XML::QL::VARNAME;
 #my $AS_ELEMENT = $XML::QL::AS_ELEMENT;
 
 sub StartTag {
   my ($expat,$element)=@_;
+#  warn "Start: $element\n";
   my %attributes;
   %attributes = %_;
   $lastcall = "open$element";
   push @context, $element;
   my $limit=scalar(@curmat);
   for (my $i = 0; $i < $limit; $i++ ) {
-    if ( ! $curmat[$i]->{done} and $XML::QL::match[$curmat[$i]->{ptr}]->{type} eq 'starttag') {
-      if ( $XML::QL::match[$curmat[$i]->{ptr}]->{element} eq $element ) {
+    if ( ! $curmat[$i]->{done} and $expat->{_matches}->[$curmat[$i]->{ptr}]->{type} eq 'starttag') {
+      if ( $expat->{_matches}->[$curmat[$i]->{ptr}]->{element} eq $element ) {
         # If the target tag equals the current element...
         # Advance match
 
         my %tmphash = %{$curmat[$i]};
         push @curmat, \%tmphash;
 
-        $curmat[$i]->{ptr}++ if ( matchAttributes($curmat[$i], %attributes) );
+        $curmat[$i]->{ptr}++ if ( matchAttributes($expat, $curmat[$i], %attributes) );
       }
     }
   }
-  if ( $XML::QL::match[0]->{type} eq 'starttag' and $XML::QL::match[0]->{element} eq $element) {
+
+  if ( $expat->{_matches}->[0]->{type} eq 'starttag' and $expat->{_matches}->[0]->{element} eq $element) {
     # If the start of the match is a starttag and the element matches the target element
     push @curmat, {'ptr' => 0, 'done' => 0, 'fail' => scalar(@context)};
-    matchAttributes($curmat[-1], %attributes);
+    matchAttributes($expat, $curmat[-1], %attributes);
     $curmat[-1]->{ptr}++;
   }
 }
 
 sub matchAttributes {
-  my ($cm, %attributes) = @_;
-  my %match_attribs = %{$XML::QL::match[$cm->{ptr}]->{attrib}};
+  my ($expat, $cm, %attributes) = @_;
+  my %match_attribs = %{$expat->{_matches}->[$cm->{ptr}]->{attrib}};
   foreach my $key ( keys(%match_attribs) ) {
     if ( $match_attribs{$key} =~ /$AS_ELEMENT/io ) {
       my $tmpfind = $1;
@@ -435,21 +440,23 @@ sub matchAttributes {
 
 sub EndTag {
   my ($expat,$element)=@_;
+#  warn "End: $element\n";
   if ($lastcall eq "open$element") {
     # To fix Char handler not being called on an empty string
 		$_ = '';
     Text($expat);
   }
   $lastcall = "close$element";
-  pop @context;
   foreach my $cm (@curmat) {
-    if ( ! $cm->{done} and $XML::QL::match[$cm->{ptr}]->{type} eq 'endtag') {
+    if ( ! $cm->{done} and $expat->{_matches}->[$cm->{ptr}]->{type} eq 'endtag') {
       # If type of cur match equals endtag...
-      if ( $XML::QL::match[$cm->{ptr}]->{element} eq $element ) {
+#	  warn "Found end tag. it is: '", $expat->{_matches}->[$cm->{ptr}]->{element}, "'\n";
+#	  warn "Current element is '$element'\n";
+      if ( $expat->{_matches}->[$cm->{ptr}]->{element} eq $element ) {
         # If the target tag equals the current element...
         # Advance match
         $cm->{ptr}++;
-        if ($cm->{ptr} == scalar(@XML::QL::match)) {
+        if ($cm->{ptr} == scalar(@{$expat->{_matches}})) {
           # if the match pointer has been advanced to the end of the match...
           # Match is done!
           my %tmp = %{$cm->{vars}};
@@ -464,6 +471,7 @@ sub EndTag {
       $cm->{reason} = "out of context on $element";
     }
   }
+  pop @context;
 }
 
 sub Text {
@@ -472,11 +480,9 @@ sub Text {
   $lastcall = "char";
   $string =~ s/^\s+//s; # strip leading whitespace
   $string =~ s/\s+$//s; # strip following white space
-#	warn "Looking at text: '$string'\n";
   foreach my $cm (@curmat) {
-    if ( ! $cm->{done} and $XML::QL::match[$cm->{ptr}]->{type} eq 'char' ) {
-#			warn "Looking at '$string' for '", $XML::QL::match[$cm->{ptr}]->{char}, "'\n";
-      if ( $XML::QL::match[$cm->{ptr}]->{char} =~ /$AS_ELEMENT/io ) {
+    if ( ! $cm->{done} and $expat->{_matches}->[$cm->{ptr}]->{type} eq 'char' ) {
+      if ( $expat->{_matches}->[$cm->{ptr}]->{char} =~ /$AS_ELEMENT/io ) {
         my $tmpfind = $1;
         my $tmpvar = $2;
         if ( $string =~ /^$tmpfind$/i ) {
@@ -484,20 +490,24 @@ sub Text {
           $cm->{ptr}++;
         }
         else {
+#			warn "Doesn't match '$AS_ELEMENT'\n";
           $cm->{done} = 1;
           $cm->{reason} = "Does not match string $string";
         }
       }
-      elsif ( $string =~ /^$XML::QL::match[$cm->{ptr}]->{char}$/i ) {
+      elsif ( $string =~ /^$expat->{_matches}->[$cm->{ptr}]->{char}$/i ) {
+#	  	warn "Matches current element!\n";
         # If the target tag equals the current element...
         # Advance match
         $cm->{ptr}++;
       }
-      elsif ( $XML::QL::match[$cm->{ptr}]->{char} =~ /^$VARNAME$/o ) {
+      elsif ( $expat->{_matches}->[$cm->{ptr}]->{char} =~ /^$VARNAME$/ ) {
+#	  	warn "Matches varname\n";
         $cm->{vars}->{$1} = $string;
         $cm->{ptr}++;
       }
       else {
+#	  	warn "Doesn't match '$VARNAME':(\n";
         $cm->{done} = 1;
         $cm->{reason} = "Does not match string $string";
       }
@@ -505,7 +515,10 @@ sub Text {
   }
 }
 
+# use Data::Dumper;
 sub EndDocument {
+#	print Dumper(\@XML::QL::found);
+	
 	1;
 }
 

@@ -12,4 +12,10 @@ Revision history for Perl extension XML::QL.
 0.04	Sun	Apr 25 1999
 	- Fixed multiline searches
 
+0.05	...
+	- More misc bug fixes
+	
+0.06	Thu May 6 1999
+	- Finally fixed the searcher - thank you Robert!!!
+	- A couple of misc changes to make maintainence easier.
 
