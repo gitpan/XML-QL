@@ -4,5 +4,5 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'	=> 'XML::QL',
     'VERSION_FROM' => 'QL.pm', # finds $VERSION
-	'dist' => {compress => 'gzip', suffix => 'gz'},
+	'dist' => { COMPRESS => 'gzip', SUFFIX => '.gz'},
 );

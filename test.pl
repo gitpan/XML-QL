@@ -42,4 +42,4 @@ Child: The Common Gateway Interface
 Child: Jarkko Hietaniemi
 ';
 
-$output eq $compare ? print "ok ", $testnum++, "\n" : print "not ok ", $testnum++, "\n";
+$output eq $compare ? print "ok ", $testnum++, "\n" : print "not ok ", $testnum++, "\n", "::\n$output\n";

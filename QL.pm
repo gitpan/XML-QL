@@ -130,11 +130,15 @@ ORDER-BY $type, $author DESCENDING
 =item IN
 
 The IN clause is a required clause that specifies the file name of the XML file.
-This can be any URI, or it can be
+This can be any URI that is supported by LWP, or it can be
 a single file name enclosed in quotes. In later versions of this module there will
-be support for multiple files, directories, and URLs. Following is an example:
+be support for multiple files, directories. The following will work:
 
 IN 'REC-xml-19980210.xml'
+
+IN 'file://othermachine/share/filename.xml'
+
+IN 'http://www.example.com/file.xml'
 
 =back
 
@@ -179,101 +183,52 @@ are released under the same terms as perl itself.
 package XML::QL;
 
 use strict;
-use vars qw/$VERSION/;
+use vars qw/$VERSION $construct $uri @orderby @match @found/;
 use XML::Parser;
 #use Data::Dumper;
 
-$VERSION = 0.03;
-
-my (@match, @context, @curmat, @found);
-
-my $construct;
-my $uri;
-my @orderby;
-my $lastcall;
-
-my $VARNAME="\\\$([a-zA-Z0-9]+)";
+$VERSION = "0.04";
+my $VARNAME='\$([a-zA-Z0-9]+)';
 my $AS_ELEMENT="^(.*?)\\s+AS_ELEMENT\\s+$VARNAME\\s*\$";
 
+
+# sub new {
+# 	my $proto = shift;
+# 	my $class = ref($proto) || $proto;
+# 	my $self = {};
+# 	my %params = @_;
+# 	$self->{parser} = new XML::Parser(
+# 		ErrorContext => ($params{ErrorContext} || 0),
+# 		Style => 'Stream');
+# 	bless $self, $class;
+# 	return $self;
+# }
+
 sub query {
-  my ($class, $sql) = @_;
+	my $self = shift;
+  my $sql = shift;
 
-  @match = ();
-  @context = ();
-  @curmat = ();
-  @found = ();
+  local @match;
+  local @found;
+	local $construct;
+	local $uri;
+	local @orderby;
 
-  buildMatchData($sql) || die "Unable to parse query string!\n";
-  searchXMLfile($uri) || die "Unable to open file $uri\n";
+
+#	$self->{match} = ();
+#	$self->{context} = ();
+#	$self->{currmatch} = ();
+#	$self->{found} = ();
+
+#  $self->buildMatchData($sql) || die "Unable to parse query string!\n";
+#  $self->searchXMLfile($uri) || die "Unable to open file $uri\n";
+#	if (!defined wantarray) {
+#		return;
+#	}
+
+	buildMatchData($sql) || die "Unable to parse query string!\n";
+	searchXMLfile($uri) || die "Unable to open and search file $uri\n";
   return createConstruct($construct);
-}
-
-sub orderBy {
-  my ($aval, $bval) = @_;
-  my $numeric = 0;
-  foreach (@orderby) {
-    my $sortby = $_->{field};
-    my $order = $_->{order};
-    if ( ($aval->{$sortby} =~ /^\d*\.?\d*$/) && ($bval->{$sortby} =~ /^\d*\.?\d*$/)) {
-      $numeric = 1;
-    }
-    if ($numeric) {
-      if ($order eq 'DESCENDING') {
-         return ($bval->{$sortby} <=> $aval->{$sortby}) if ($bval->{$sortby} != $aval->{$sortby});
-      }
-      else {
-        return ($aval->{$sortby} <=> $bval->{$sortby}) if ($aval->{$sortby} != $bval->{$sortby});
-      }
-    }
-    else {
-      if ($order eq 'DESCENDING') {
-	return ($bval->{$sortby} cmp $aval->{$sortby}) if ($bval->{$sortby} ne $aval->{$sortby});
-      }
-      else {
-        return ($aval->{$sortby} cmp $bval->{$sortby}) if ($aval->{$sortby} ne $bval->{$sortby});
-      }
-    }
-  }
-  return 0;
-}
-
-sub createConstruct {
-  my ($construct) = @_;
-  my $ret_val = '';
-  @found = sort { orderBy($a,$b) } (@found) if ( scalar(@orderby) > 0 );
-  foreach my $match (@found) {
-    my $tmp = $construct;
-    foreach my $key ( keys(%{$match})) {
-      $tmp =~ s/\$$key/$match->{$key}/eg;
-    }
-    $ret_val .= $tmp;
-  }
-  return $ret_val;
-}
-
-sub searchXMLfile {
-  my ($uri) = @_;
-
-  my $ql = new XML::Parser(Handlers => {Start => \&handle_start, End => \&handle_end, Char => \&handle_char});
-
-  if ($uri =~ /^(file:|https?:|ftp:|gopher:)/) {
-    eval "use LWP::UserAgent;";
-    my $ua = LWP::UserAgent->new;
-    $ua->env_proxy;
-
-    my $req = new HTTP::Request 'GET',$uri;
-    my $doc = $ua->request($req)->content;
-	
-    $ql->parsestring($doc);
-  }
-  else {
-    # Assume it's a file
-    $ql->parsefile($uri);
-  }
-
-  #open OUT, ">debug.txt";
-  #print OUT Data::Dumper->Dump([\@match, \@context, \@curmat, \@found],['match', 'context', 'curmat', 'found']);
-  #close OUT;
 }
 
 sub buildMatchData {
@@ -324,14 +279,99 @@ sub where_char {
   push @match, {'type' => 'char', 'element' => '', 'char' => $string, 'attrib' => {}} if ($string ne '');
 }
 
-sub handle_start {
-  my ($expat,$element,%attributes)=@_;
+sub searchXMLfile {
+  my ($uri) = @_;
+
+  my $ql = new XML::Parser(
+  	Style => 'Stream',
+  	Pkg => 'XML::QL::Search',
+  	ErrorContext => 2,
+  );
+
+  if ($uri =~ /^(file:|https?:|ftp:|gopher:)/) {
+  	my $doc;
+
+    eval <<'EOLWP';
+
+    use LWP::UserAgent;
+    my $ua = LWP::UserAgent->new;
+    $ua->env_proxy;
+
+    my $req = new HTTP::Request 'GET',$uri;
+    $doc = $ua->request($req)->content;
+EOLWP
+
+    $ql->parsestring($doc);
+  }
+  else {
+    # Assume it's a file
+    $ql->parsefile($uri);
+  }
+
+  #open OUT, ">debug.txt";
+  #print OUT Data::Dumper->Dump([\@match, \@context, \@curmat, \@found],['match', 'context', 'curmat', 'found']);
+  #close OUT;
+}
+
+sub createConstruct {
+  my ($construct) = @_;
+  my @ret_val;
+  @found = sort { orderBy($a,$b) } (@found) if ( @orderby > 0 );
+  foreach my $match (@found) {
+    my $tmp = $construct;
+    foreach my $key ( keys(%{$match})) {
+      $tmp =~ s/\$$key/$match->{$key}/eg;
+    }
+    push @ret_val, $tmp;
+  }
+  return join '', @ret_val;
+}
+
+sub orderBy {
+	my $self = shift;
+	
+  my ($aval, $bval) = @_;
+  my $numeric = 0;
+  foreach (@{$self->{orderby}}) {
+    my $sortby = $_->{field};
+    my $order = $_->{order};
+    if ( ($aval->{$sortby} =~ /^\d*\.?\d*$/) && ($bval->{$sortby} =~ /^\d*\.?\d*$/)) {
+      $numeric = 1;
+    }
+    if ($numeric) {
+      if ($order eq 'DESCENDING') {
+         return ($bval->{$sortby} <=> $aval->{$sortby}) if ($bval->{$sortby} != $aval->{$sortby});
+      }
+      else {
+        return ($aval->{$sortby} <=> $bval->{$sortby}) if ($aval->{$sortby} != $bval->{$sortby});
+      }
+    }
+    else {
+      if ($order eq 'DESCENDING') {
+	return ($bval->{$sortby} cmp $aval->{$sortby}) if ($bval->{$sortby} ne $aval->{$sortby});
+      }
+      else {
+        return ($aval->{$sortby} cmp $bval->{$sortby}) if ($aval->{$sortby} ne $bval->{$sortby});
+      }
+    }
+  }
+  return 0;
+}
+
+package XML::QL::Search;
+
+use vars qw($lastcall @context @curmat);
+
+sub StartTag {
+  my ($expat,$element)=@_;
+  my %attributes;
+  %attributes = %_;
   $lastcall = "open$element";
   push @context, $element;
   my $limit=scalar(@curmat);
   for (my $i = 0; $i < $limit; $i++ ) {
-    if ( ! $curmat[$i]->{done} and $match[$curmat[$i]->{ptr}]->{type} eq 'starttag') {
-      if ( $match[$curmat[$i]->{ptr}]->{element} eq $element ) {
+    if ( ! $curmat[$i]->{done} and $XML::QL::match[$curmat[$i]->{ptr}]->{type} eq 'starttag') {
+      if ( $XML::QL::match[$curmat[$i]->{ptr}]->{element} eq $element ) {
         # If the target tag equals the current element...
         # Advance match
 
@@ -342,7 +382,7 @@ sub handle_start {
       }
     }
   }
-  if ( $match[0]->{type} eq 'starttag' and $match[0]->{element} eq $element) {
+  if ( $XML::QL::match[0]->{type} eq 'starttag' and $XML::QL::match[0]->{element} eq $element) {
     # If the start of the match is a starttag and the element matches the target element
     push @curmat, {'ptr' => 0, 'done' => 0, 'fail' => scalar(@context)};
     matchAttributes($curmat[-1], %attributes);
@@ -352,7 +392,7 @@ sub handle_start {
 
 sub matchAttributes {
   my ($cm, %attributes) = @_;
-  my %match_attribs = %{$match[$cm->{ptr}]->{attrib}};
+  my %match_attribs = %{$XML::QL::match[$cm->{ptr}]->{attrib}};
   foreach my $key ( keys(%match_attribs) ) {
     if ( $match_attribs{$key} =~ /$AS_ELEMENT/io ) {
       my $tmpfind = $1;
@@ -376,26 +416,26 @@ sub matchAttributes {
   return 1;
 }
 
-sub handle_end {
+sub EndTag {
   my ($expat,$element)=@_;
   if ($lastcall eq "open$element") {
     # To fix Char handler not being called on an empty string
-    handle_char($expat, '');
+    Text($expat, '');
   }
   $lastcall = "close$element";
   pop @context;
   foreach my $cm (@curmat) {
-    if ( ! $cm->{done} and $match[$cm->{ptr}]->{type} eq 'endtag') {
+    if ( ! $cm->{done} and $XML::QL::match[$cm->{ptr}]->{type} eq 'endtag') {
       # If type of cur match equals endtag...
-      if ( $match[$cm->{ptr}]->{element} eq $element ) {
+      if ( $XML::QL::match[$cm->{ptr}]->{element} eq $element ) {
         # If the target tag equals the current element...
         # Advance match
         $cm->{ptr}++;
-        if ($cm->{ptr} == scalar(@match)) {
+        if ($cm->{ptr} == scalar(@XML::QL::match)) {
           # if the match pointer has been advanced to the end of the match...
           # Match is done!
           my %tmp = %{$cm->{vars}};
-          push @found, \%tmp;
+          push @XML::QL::found, \%tmp;
           $cm->{done} = 1;
           $cm->{reason} = 'matched query';
         }
@@ -408,14 +448,15 @@ sub handle_end {
   }
 }
 
-sub handle_char {
-  my ($expat,$string)=@_;
+sub Text {
+  my ($expat)=@_;
+  my $string = $_;
   $lastcall = "char";
   $string =~ s/^\s+//; # strip leading whitespace
   $string =~ s/\s+$//; # strip following white space
   foreach my $cm (@curmat) {
-    if ( ! $cm->{done} and $match[$cm->{ptr}]->{type} eq 'char' ) {
-      if ( $match[$cm->{ptr}]->{char} =~ /$AS_ELEMENT/io ) {
+    if ( ! $cm->{done} and $XML::QL::match[$cm->{ptr}]->{type} eq 'char' ) {
+      if ( $XML::QL::match[$cm->{ptr}]->{char} =~ /$AS_ELEMENT/io ) {
         my $tmpfind = $1;
         my $tmpvar = $2;
         if ( $string =~ /^$tmpfind$/i ) {
@@ -427,12 +468,12 @@ sub handle_char {
           $cm->{reason} = "Does not match string $string";
         }
       }
-      elsif ( $string =~ /^$match[$cm->{ptr}]->{char}$/i ) {
+      elsif ( $string =~ /^$XML::QL::match[$cm->{ptr}]->{char}$/i ) {
         # If the target tag equals the current element...
         # Advance match
         $cm->{ptr}++;
       }
-      elsif ( $match[$cm->{ptr}]->{char} =~ /^$VARNAME$/o ) {
+      elsif ( $XML::QL::match[$cm->{ptr}]->{char} =~ /^$VARNAME$/o ) {
         $cm->{vars}->{$1} = $string;
         $cm->{ptr}++;
       }
@@ -442,6 +483,10 @@ sub handle_char {
       }
     }
   }
+}
+
+sub EndDocument {
+	1;
 }
 
 1;

@@ -1,14 +1,5 @@
-Revision history for Perl extension XML::QL.
-
-0.01  Tue Dec  8 12:22:29 1998
-	- original version; created by Robert Hanson
-	
-0.02  Mon Dec 14 1998
-	- Added support for URI's
-
-0.03  Thu Jan 14 1999
-	- Fixes from Eric Bohlman
-
+0.04	Sun	Apr 25 1999
+	- Fixed multiline searches
 
 
 NAME
@@ -130,12 +121,17 @@ XML-QL: The Query Language
             ORDER-BY $type, $author DESCENDING
 
     IN      The IN clause is a required clause that specifies the file
-            name of the XML file. This can be any URI, or it can be
-            a single file name enclosed in quotes. In later versions
-            of this module there will be support for multiple files,
-            directories, and URLs. Following is an example:
+            name of the XML file. This can be any URI that is
+            supported by LWP, or it can be a single file name
+            enclosed in quotes. In later versions of this module
+            there will be support for multiple files, directories.
+            The following will work:
 
             IN 'REC-xml-19980210.xml'
+
+            IN 'file://othermachine/share/filename.xml'
+
+            IN 'http://www.example.com/file.xml'
 
     CONSTRUCT
         The CONSTRUCT construct allows you to specify a template for
