@@ -1,0 +1,10 @@
+Revision history for Perl extension XML::QL.
+
+0.01  Tue Dec  8 12:22:29 1998
+	- original version; created by Robert Hanson
+	
+0.02  Mon Dec 14 1998
+	- Added support for URI's
+
+
+
