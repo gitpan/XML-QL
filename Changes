@@ -19,3 +19,6 @@ Revision history for Perl extension XML::QL.
 	- Finally fixed the searcher - thank you Robert!!!
 	- A couple of misc changes to make maintainence easier.
 
+0.07	Wed May 26 1999
+	- Fixed another wierd bug :)
+	- Let expat handle context.

@@ -7,7 +7,7 @@ XML::QL - An XML query language
 
 =head1 VERSION
 
-0.05 beta
+0.07
 
 =head1 SYNOPSIS
 
@@ -187,8 +187,8 @@ use vars qw/$VERSION $construct $uri @orderby @match @found/;
 use XML::Parser;
 # use Data::Dumper;
 
-$VERSION = "0.06";
-my $VARNAME='\$([a-zA-Z0-9]+)';
+$VERSION = "0.07";
+my $VARNAME='\$([_a-zA-Z0-9]+)';
 my $AS_ELEMENT="^(.*?)\\s+AS_ELEMENT\\s+$VARNAME\\s*\$";
 
 
@@ -376,7 +376,7 @@ sub Text {
 
 package XML::QL::Search;
 
-use vars qw($lastcall @context @curmat);
+use vars qw($lastcall @curmat);
 
 my $found = 0;
 #my $VARNAME = $XML::QL::VARNAME;
@@ -388,7 +388,6 @@ sub StartTag {
   my %attributes;
   %attributes = %_;
   $lastcall = "open$element";
-  push @context, $element;
   my $limit=scalar(@curmat);
   for (my $i = 0; $i < $limit; $i++ ) {
     if ( ! $curmat[$i]->{done} and $expat->{_matches}->[$curmat[$i]->{ptr}]->{type} eq 'starttag') {
@@ -406,7 +405,7 @@ sub StartTag {
 
   if ( $expat->{_matches}->[0]->{type} eq 'starttag' and $expat->{_matches}->[0]->{element} eq $element) {
     # If the start of the match is a starttag and the element matches the target element
-    push @curmat, {'ptr' => 0, 'done' => 0, 'fail' => scalar(@context)};
+    push @curmat, {'ptr' => 0, 'done' => 0, 'fail' => $expat->context};
     matchAttributes($expat, $curmat[-1], %attributes);
     $curmat[-1]->{ptr}++;
   }
@@ -461,17 +460,17 @@ sub EndTag {
           # Match is done!
           my %tmp = %{$cm->{vars}};
           push @XML::QL::found, \%tmp;
+					@curmat = ();
           $cm->{done} = 1;
           $cm->{reason} = 'matched query';
         }
       }
     }
-    if ( ( ! $cm->{done} ) && ( scalar(@context) < $cm->{fail} ) ) {
+    if ( ( ! $cm->{done} ) && ( $expat->context < $cm->{fail} ) ) {
       $cm->{done} = 1;
       $cm->{reason} = "out of context on $element";
     }
   }
-  pop @context;
 }
 
 sub Text {
